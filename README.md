@@ -1,0 +1,1 @@
+lib.rs have all the functions for sa is, only build_sa_is need to be called in order to get suffix array. in main theres just implementation of findind longest repeating subsequence in string and has nothing to do with sa is itself.
