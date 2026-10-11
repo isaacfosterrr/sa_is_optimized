@@ -206,94 +206,25 @@ pub fn get_heads_tails(freq: &[u32]) -> (Vec<u32>, Vec<u32>) {
     (heads, tails)
 }
 
-pub fn place_lms<P: Packed>(lms: &[u32], tails: &mut [u32], packed: &[P]) -> (Vec<u32>, Vec<P>) {
+pub fn place_lms<P: Packed>(lms: &[u32], tails: &mut [u32], packed: &[P]) -> Vec<u32> {
     let mut sa = vec![u32::MAX; packed.len()];
-    let mut note = vec![packed[0]; packed.len()];
+
     for i in (0..lms.len()).rev() {
         let pos = lms[i] as usize;
         let ch = packed[pos].sym();
         let bucket_end = tails[ch] as usize;
         sa[bucket_end] = lms[i];
-        note[bucket_end] = packed[pos - 1];
+        
         if tails[ch] > 0 {
             tails[ch] -= 1;	
         }
     }
-    (sa, note)
+    sa
 }
 
-// {
-// induce functions determine position of all non-lms suffixes
-// using lms suffixes, that already placed
-// pub  fn  induce_l(bytes: &[u16], sa: &mut[u32], heads: &mut [u32])  {
 
-
-// // Your existing L-induce code goes here
-    // //left to right scan
-    // for i in 0..bytes.len() {
-		// // if i + 32 < bytes.len() {
-			// // let nxt = sa.get(i + 32).copied().unwrap_or(0);
-		    // // let p = nxt.wrapping_sub(1) as usize;
-		   // // unsafe {
-			   // // _mm_prefetch(bytes.as_ptr().add(p) as *const i8, _MM_HINT_T0)
-		   // // }
-		// // }
-        // if sa[i] == u32::MAX {
-            // continue;
-			
-        // } 
-		// let index = sa[i];
-		// let v = bytes[(index - 1) as usize];   // one random cache line, not two
-		// if v & S_BIT == 0 {                     // is L-type
-			// let ch = (v & SYM_MASK) as usize;   // real symbol value
-			// let bucket_start = heads[ch] as usize;
-			// sa[bucket_start] = index - 1;
-			// heads[ch] += 1;
-		// }
-		
-     // }
-// }
-// }
-// pub fn induce_l<P: Packed>(packed: &[P], sa: &mut [u32], note: &mut [P] heads: &mut [u32]) {
-	// const D: usize = 32;
-	// let n = packed.len();
-	// for i in 0..n {
-		// if i + D < n {
-			// let nxt = sa[i + D];
-			// if nxt != u32::MAX && nxt > 0 {
-				// unsafe {
-					// _mm_prefetch(packed.as_ptr().add((nxt - 1) as usize) as *const i8, _MM_HINT_T0);
-				// }
-			// }
-		// }
-        // let index = sa[i];
-        // if index == u32::MAX || index == 0 { continue; }
-        // let v = packed[(index - 1) as usize];
-        // if !v.is_s() {
-            // let ch = v.sym();
-            // let bucket_start = heads[ch] as usize;
-            // sa[bucket_start] = index - 1;
-            // heads[ch] += 1;
-        // }
-    // }
-	// {
-		// // let index = unsafe { *sa.get_unchecked(i) };
-		// // if index == u32::MAX || index == 0 { continue; }
-		// // let v = unsafe { *packed.get_unchecked((index - 1) as usize) };
-		// // if !v.is_s() {
-			// // let ch = v.sym();
-			// // let b = unsafe { *heads.get_unchecked(ch) } as usize;
-			// // unsafe { *sa.get_unchecked_mut(b) = index - 1; }
-			// // unsafe { *heads.get_unchecked_mut(ch) += 1; }
-		// // }
-
-
-	// //}
-// }
-// }
-
-pub fn induce_l<P: Packed>(packed: &[P], sa: &mut [u32], note: &mut [P], heads: &mut [u32]) {
-	 const D: usize = 32;
+pub fn induce_l<P: Packed>(packed: &[P], sa: &mut [u32], heads: &mut [u32]) {
+	const D: usize = 32;
 	let n = packed.len();
     for i in 0..packed.len() {
 		if i + D < n {
@@ -301,7 +232,7 @@ pub fn induce_l<P: Packed>(packed: &[P], sa: &mut [u32], note: &mut [P], heads: 
 			if nxt != u32::MAX && nxt > 1 {
 				unsafe {
 					_mm_prefetch(
-						packed.as_ptr().add((nxt - 2) as usize) as *const i8,
+						packed.as_ptr().add((nxt - 1) as usize) as *const i8,
 						_MM_HINT_T0,
 					);
 				}
@@ -309,14 +240,13 @@ pub fn induce_l<P: Packed>(packed: &[P], sa: &mut [u32], note: &mut [P], heads: 
 		}
         let index = sa[i];
         if index == u32::MAX || index == 0 { continue; }
-        let v = note[i];                      // == packed[index-1], no random read
+        let v = packed[(index - 1) as usize];      
         if !v.is_s() {
             let ch = v.sym();
             let slot = heads[ch] as usize;
-            let p = (index - 1) as usize;
-            sa[slot] = p as u32;
-            if p > 0 { note[slot] = packed[p - 1]; }   // random read moves here
+            sa[slot] = index - 1;
             heads[ch] += 1;
+        
         }
     }
 }
@@ -502,7 +432,7 @@ pub fn induce_all<T: Symbol, P: Packed>(
     );
 	
 	let t = Instant::now();
-    let (mut guessed_sa, mut note) = place_lms(&lms, &mut tails.clone(), &packed);
+    let mut guessed_sa = place_lms(&lms, &mut tails.clone(), &packed);
     eprintln!(
         "place_lms 1 depth={depth}, n={}, time={:.3}s",
         bytes.len(),
@@ -511,7 +441,7 @@ pub fn induce_all<T: Symbol, P: Packed>(
     
 
     let t = Instant::now();
-    induce_l(&packed, &mut guessed_sa, &mut note, &mut heads.clone());
+    induce_l(&packed, &mut guessed_sa, &mut heads.clone());
     eprintln!(
         "induce_l 1 depth={depth}, n={}, time={:.3}s",
         bytes.len(),
@@ -552,7 +482,7 @@ pub fn induce_all<T: Symbol, P: Packed>(
     };
 
 	let t = Instant::now();
-    let (mut final_sa, mut final_note) = place_lms(&sorted_lms, &mut tails.clone(), &packed);
+    let mut final_sa = place_lms(&sorted_lms, &mut tails.clone(), &packed);
     eprintln!(
         "place_lms 2 depth={depth}, n={}, time={:.3}s",
         bytes.len(),
@@ -561,7 +491,7 @@ pub fn induce_all<T: Symbol, P: Packed>(
     
 
     let t = Instant::now();
-    induce_l(&packed, &mut final_sa, &mut final_note, &mut heads.clone());
+    induce_l(&packed, &mut final_sa, &mut heads.clone());
     eprintln!(
         "induce_l 2 depth={depth}, n={}, time={:.3}s",
         bytes.len(),
